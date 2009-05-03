@@ -1,6 +1,6 @@
 " File:        objc_matchbracket.vim
 " Author:      Michael Sanders (msanders42 [at] gmail [dot] com)
-" Version:     0.3
+" Version:     0.5
 " Description: TextMate's "Insert Matching Start Bracket" feature implemented
 "              in vim script. Makes it a lot more pleasant to write Objective-C.
 " Usage:       Just type "]" in insert mode after an object or method you want to
@@ -19,7 +19,7 @@ let s:did_objc_ftplugin = 1
 fun s:Count(haystack, needle)
     let counter = 0
     let index = stridx(a:haystack, a:needle)
-    wh index != -1
+    while index != -1
         let counter += 1
         let index = stridx(a:haystack, a:needle, index + 1)
     endw
@@ -34,7 +34,7 @@ fun s:MatchBracket()
 	let beforeCursor = strpart(line, 0, col)
 
 	" If a semicolon is found, only wrap the words past it.
-	let semiPos = strridx(beforeCursor, ';') + 1
+	let semiPos = matchend(beforeCursor, '.*\(;\|,\||\)') + 1
 	if semiPos | let beforeCursor = strpart(beforeCursor, semiPos) | endif
 
 	" If equals sign is found, only wrap the words past it like TextMate does.
@@ -42,13 +42,15 @@ fun s:MatchBracket()
 	" "[foo = [bar ]]"
 	let equalsCol = matchend(beforeCursor, '\[\w*\s*=')
 	" Don't wrap if inside or directly outside a string.
-	let char = matchstr(beforeCursor, '\S\ze\S*\s*\%'.col.'c')
+	let charpos = matchend(beforeCursor, '\S\ze\S*\s*\%'.col.'c') - 1
+	let char = line[charpos]
 	" Only wrap past "return" if it's given.
 	let return = matchend(beforeCursor, '.*return\s*')
 
 	" If the line is blank or there is already an opening bracket, don't
 	" autocomplete.
 	if beforeCursor =~ '^\s*\S\=$' || char == '"' || char == "'"
+					\ || (char == '@' && line[charpos + 1] == '"')
 					\ || s:Count(line, '[') > s:Count(line, ']')
 					\ || col - return < 2
 		return ']'
@@ -70,6 +72,8 @@ fun s:MatchBracket()
 
 		let startCol = parenCol > braceCol ? parenCol : braceCol
 		if return > startCol | let startCol = return | endif
+		let symCol = matchend(beforeCursor, '.*[!*&^%~]')
+		if symCol > startCol | let startCol = symCol | endif
 
 		let equalsCol = strridx(beforeCursor, '=') + 1
 		if equalsCol > startCol | let startCol = equalsCol | endif
@@ -90,18 +94,15 @@ fun s:MatchBracket()
 		if line[col] == ' ' || line[col] == "\t"
 			let col -= 1 | let space =  ''
 		else
- 			let space = line[col] == ']' ||
-				\ strpart(beforeCursor, startCol) !~ '[^=;\s]\s\+[^=]' ? ' ' : ''
+ 			let space = line[col] == ']'
+					\ || strpart(beforeCursor, startCol) !~ '^\s*\S\+\s\+' ? ' ' : ''
 		endif
 
 		let startCol += semiPos " Autocomplete past semicolon, if it exists.
 		if startCol
-			if strpart(beforeCursor, startCol) !~ '\w\w\+'
-				return ']'
-			endif
 			exe 'norm! i'.space.']'
 			call cursor(lnum, startCol)
-			exe 'norm! wi['
+			norm! wi[
 		else
 			exe 'norm! i'.space."]\<esc>I["
 		endif
